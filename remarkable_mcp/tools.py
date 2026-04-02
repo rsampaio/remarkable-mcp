@@ -5,10 +5,12 @@ All tools are read-only and idempotent - they only retrieve data from the
 reMarkable Cloud and do not modify any documents.
 """
 
+import asyncio
 import base64
 import os
 import re
 import tempfile
+import threading
 from pathlib import Path
 from typing import List, Literal, Optional
 
@@ -50,6 +52,31 @@ from remarkable_mcp.sampling import (
     should_use_sampling_ocr,
 )
 from remarkable_mcp.server import mcp
+
+
+def _run_async_compat(coro):
+    """Run an async coroutine from sync tool code, even if a loop is already running."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result = {}
+    error = {}
+
+    def runner():
+        try:
+            result["value"] = asyncio.run(coro)
+        except Exception as exc:  # pragma: no cover - helper passthrough
+            error["exc"] = exc
+
+    thread = threading.Thread(target=runner, daemon=True)
+    thread.start()
+    thread.join()
+
+    if "exc" in error:
+        raise error["exc"]
+    return result.get("value")
 
 
 def _get_root_path() -> str:
@@ -212,8 +239,6 @@ def _ocr_png_google_vision(png_path: Path) -> Optional[str]:
     Returns:
         Extracted text, or None if OCR failed
     """
-    import base64
-
     import requests
 
     api_key = os.environ.get("GOOGLE_VISION_API_KEY")
@@ -466,9 +491,12 @@ async def remarkable_read(
                     content = extract_text_from_document_zip(
                         tmp_path, include_ocr=include_ocr, doc_id=target_doc.ID
                     )
+                    total_notebook_pages = content.get("pages", 0)
                     if content.get("handwritten_text"):
                         notebook_pages = content["handwritten_text"]
                         ocr_backend_used = content.get("ocr_backend")
+                    elif total_notebook_pages:
+                        notebook_pages = [""] * total_notebook_pages
                 finally:
                     tmp_path.unlink(missing_ok=True)
 
@@ -892,10 +920,9 @@ def remarkable_browse(
                                 suggestion="Check REMARKABLE_ROOT_PATH configuration.",
                             )
                         # Call remarkable_read internally and add redirect note
-                        import asyncio
                         import json
 
-                        read_result = asyncio.run(
+                        read_result = _run_async_compat(
                             remarkable_read(_apply_root_filter(doc_path), page=1)
                         )
                         result_data = json.loads(read_result)
@@ -1107,7 +1134,7 @@ def remarkable_recent(limit: int = 10, include_preview: bool = False) -> str:
 
 
 @mcp.tool(annotations=SEARCH_ANNOTATIONS)
-def remarkable_search(
+async def remarkable_search(
     query: str,
     grep: Optional[str] = None,
     limit: int = 5,
@@ -1179,7 +1206,7 @@ def remarkable_search(
                 doc_result["tags"] = doc["tags"]
 
             try:
-                read_result = remarkable_read(
+                read_result = await remarkable_read(
                     document=doc["path"],
                     page=1,
                     grep=grep,

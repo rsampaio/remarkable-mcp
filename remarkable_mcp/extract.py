@@ -46,6 +46,42 @@ _extraction_cache: Dict[str, Dict[str, Any]] = {}
 _page_ocr_cache: Dict[tuple, Dict[str, Any]] = {}
 
 
+def _is_deleted_page_entry(page_entry: Any) -> bool:
+    """Return True when a notebook page entry is marked deleted."""
+    if not isinstance(page_entry, dict):
+        return False
+    deleted = page_entry.get("deleted")
+    if isinstance(deleted, dict):
+        return deleted.get("value") == 1
+    return deleted == 1
+
+
+def _get_active_page_entries(content_data: Dict[str, Any]) -> List[Any]:
+    """Return active (non-deleted) page entries from .content metadata."""
+    if "cPages" in content_data and isinstance(content_data["cPages"], dict):
+        pages = content_data["cPages"].get("pages")
+        if isinstance(pages, list):
+            return [page for page in pages if not _is_deleted_page_entry(page)]
+    pages = content_data.get("pages")
+    if isinstance(pages, list):
+        return [page for page in pages if not _is_deleted_page_entry(page)]
+    return []
+
+
+def _get_active_page_order(content_data: Dict[str, Any]) -> List[str]:
+    """Return ordered active page ids from .content metadata."""
+    active_pages = _get_active_page_entries(content_data)
+    page_ids: List[str] = []
+    for page in active_pages:
+        if isinstance(page, dict):
+            page_id = page.get("id")
+        else:
+            page_id = page
+        if page_id:
+            page_ids.append(page_id)
+    return page_ids
+
+
 def _is_cache_valid(cached: Dict[str, Any]) -> bool:
     """Check if a cached entry is still valid based on TTL."""
     if "timestamp" not in cached:
@@ -781,12 +817,7 @@ def _get_ordered_rm_files(tmpdir_path: Path) -> List[Path]:
     for content_file in tmpdir_path.glob("*.content"):
         try:
             data = json.loads(content_file.read_text())
-            # New format: cPages.pages array
-            if "cPages" in data and "pages" in data["cPages"]:
-                page_order = [p["id"] for p in data["cPages"]["pages"]]
-            # Fallback: pages array directly
-            elif "pages" in data and isinstance(data["pages"], list):
-                page_order = data["pages"]
+            page_order = _get_active_page_order(data)
         except Exception:
             # Ignore errors reading/parsing .content file; fallback to default page order
             pass
@@ -901,10 +932,9 @@ def get_document_page_count(zip_path: Path) -> int:
         for content_file in tmpdir_path.glob("*.content"):
             try:
                 data = json.loads(content_file.read_text())
-                if "cPages" in data and "pages" in data["cPages"]:
-                    return len(data["cPages"]["pages"])
-                if "pages" in data and isinstance(data["pages"], list):
-                    return len(data["pages"])
+                page_order = _get_active_page_order(data)
+                if page_order:
+                    return len(page_order)
             except Exception:
                 pass
             break
@@ -963,12 +993,7 @@ def extract_text_from_document_zip(
         for content_file in tmpdir_path.glob("*.content"):
             try:
                 data = json.loads(content_file.read_text())
-                # New format: cPages.pages array
-                if "cPages" in data and "pages" in data["cPages"]:
-                    page_order = [p["id"] for p in data["cPages"]["pages"]]
-                # Fallback: pages array directly
-                elif "pages" in data and isinstance(data["pages"], list):
-                    page_order = data["pages"]
+                page_order = _get_active_page_order(data)
             except Exception:
                 # Malformed .content file - continue without page order
                 pass
