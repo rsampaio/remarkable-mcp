@@ -892,9 +892,12 @@ def remarkable_browse(
                                 suggestion="Check REMARKABLE_ROOT_PATH configuration.",
                             )
                         # Call remarkable_read internally and add redirect note
-                        read_result = remarkable_read(_apply_root_filter(doc_path), page=1)
+                        import asyncio
                         import json
 
+                        read_result = asyncio.run(
+                            remarkable_read(_apply_root_filter(doc_path), page=1)
+                        )
                         result_data = json.loads(read_result)
                         if "_error" not in result_data:
                             result_data["_redirected_from"] = f"browse:{path}"
