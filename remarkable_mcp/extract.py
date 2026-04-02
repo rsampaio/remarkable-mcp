@@ -1142,13 +1142,16 @@ def _ocr_google_vision(rm_files: List[Path]) -> Optional[List[str]]:
     import os
 
     api_key = os.environ.get("GOOGLE_VISION_API_KEY")
+    google_application_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
-    if api_key:
-        # Use REST API with API key (simpler, no SDK needed)
-        return _ocr_google_vision_rest(rm_files, api_key)
-    else:
-        # Use SDK with service account credentials
+    if google_application_credentials:
+        # Prefer ADC/service-account auth when configured explicitly.
         return _ocr_google_vision_sdk(rm_files)
+    if api_key:
+        # Use REST API with API key only when no ADC/service-account path is configured.
+        return _ocr_google_vision_rest(rm_files, api_key)
+    # Fall back to SDK/default credentials
+    return _ocr_google_vision_sdk(rm_files)
 
 
 def _ocr_google_vision_rest(rm_files: List[Path], api_key: str) -> Optional[List[str]]:
