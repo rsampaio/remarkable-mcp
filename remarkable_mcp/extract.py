@@ -615,14 +615,14 @@ def render_rm_file_to_png(
         # Get content bounds from SVG
         bounds = _get_svg_content_bounds(tmp_svg_path)
         if bounds:
-            # Use content bounds with margin
+            # Use content bounds with margin, then upscale for better visual quality
             _, _, content_width, content_height = bounds
-            output_width = int(content_width) + 2 * CONTENT_MARGIN
-            output_height = int(content_height) + 2 * CONTENT_MARGIN
+            output_width = (int(content_width) + 2 * CONTENT_MARGIN) * PNG_RENDER_SCALE
+            output_height = (int(content_height) + 2 * CONTENT_MARGIN) * PNG_RENDER_SCALE
         else:
-            # Fallback to standard reMarkable dimensions
-            output_width = REMARKABLE_WIDTH
-            output_height = REMARKABLE_HEIGHT
+            # Fallback to upscaled standard reMarkable dimensions
+            output_width = REMARKABLE_WIDTH * PNG_RENDER_SCALE
+            output_height = REMARKABLE_HEIGHT * PNG_RENDER_SCALE
 
         # Convert SVG to PNG
         try:
@@ -1195,8 +1195,8 @@ def _ocr_google_vision_sdk(rm_files: List[Path]) -> Optional[List[str]]:
                     cairosvg.svg2png(
                         url=str(tmp_svg_path),
                         write_to=str(tmp_raw_path),
-                        output_width=REMARKABLE_WIDTH,
-                        output_height=REMARKABLE_HEIGHT,
+                        output_width=REMARKABLE_WIDTH * OCR_RENDER_SCALE,
+                        output_height=REMARKABLE_HEIGHT * OCR_RENDER_SCALE,
                     )
 
                     # Add white background (SVG renders as black-on-transparent)
@@ -1304,12 +1304,12 @@ def _ocr_tesseract(rm_files: List[Path]) -> Optional[List[str]]:
                     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_raw:
                         tmp_raw_path = Path(tmp_raw.name)
 
-                    # Use 1.5x resolution for better OCR (2x is too slow)
+                    # Use higher resolution for better OCR from the SVG source
                     cairosvg.svg2png(
                         url=str(tmp_svg_path),
                         write_to=str(tmp_raw_path),
-                        output_width=2106,  # 1.5x reMarkable width
-                        output_height=2808,  # 1.5x reMarkable height
+                        output_width=REMARKABLE_WIDTH * OCR_RENDER_SCALE,
+                        output_height=REMARKABLE_HEIGHT * OCR_RENDER_SCALE,
                     )
 
                     # Add white background (SVG renders as black-on-transparent)
