@@ -32,6 +32,11 @@ REMARKABLE_BACKGROUND_COLOR = get_background_color()
 # Margin around content when using content-based bounding box (in pixels)
 CONTENT_MARGIN = 50
 
+# Render scaling to improve visual quality and OCR accuracy from SVG conversion.
+# Kept configurable via env vars for easy tuning without code changes.
+PNG_RENDER_SCALE = max(1, int(os.environ.get("REMARKABLE_PNG_RENDER_SCALE", "2")))
+OCR_RENDER_SCALE = max(1, int(os.environ.get("REMARKABLE_OCR_RENDER_SCALE", "2")))
+
 # Cache TTL in seconds (5 minutes)
 CACHE_TTL_SECONDS = 300
 
