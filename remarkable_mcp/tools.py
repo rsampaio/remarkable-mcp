@@ -231,7 +231,7 @@ def _ocr_png_tesseract(png_path: Path) -> Optional[str]:
 
 def _ocr_png_google_vision(png_path: Path) -> Optional[str]:
     """
-    OCR a PNG file using Google Cloud Vision API.
+    OCR a PNG file using Google Cloud Vision via ADC/service-account auth.
 
     Args:
         png_path: Path to the PNG file
@@ -239,40 +239,23 @@ def _ocr_png_google_vision(png_path: Path) -> Optional[str]:
     Returns:
         Extracted text, or None if OCR failed
     """
-    import requests
-
-    api_key = os.environ.get("GOOGLE_VISION_API_KEY")
-    if not api_key:
+    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
         return None
 
     try:
+        from google.cloud import vision
+
+        client = vision.ImageAnnotatorClient()
         with open(png_path, "rb") as f:
-            image_content = base64.b64encode(f.read()).decode("utf-8")
-
-        url = f"https://vision.googleapis.com/v1/images:annotate?key={api_key}"
-        payload = {
-            "requests": [
-                {
-                    "image": {"content": image_content},
-                    "features": [{"type": "DOCUMENT_TEXT_DETECTION"}],
-                }
-            ]
-        }
-
-        response = requests.post(url, json=payload, timeout=60)
-        if response.status_code == 200:
-            data = response.json()
-            if "responses" in data and data["responses"]:
-                resp = data["responses"][0]
-                if "fullTextAnnotation" in resp:
-                    text = resp["fullTextAnnotation"]["text"]
-                    return text.strip() if text.strip() else None
-
+            content = f.read()
+        image = vision.Image(content=content)
+        response = client.document_text_detection(image=image)
+        if response.error.message:
+            return None
+        text = response.full_text_annotation.text if response.full_text_annotation else None
+        return text.strip() if text and text.strip() else None
     except Exception:
-        # Silently fail - OCR is best-effort and caller will handle None
-        pass
-
-    return None
+        return None
 
 
 @mcp.tool(annotations=READ_ANNOTATIONS)
@@ -1606,7 +1589,7 @@ async def remarkable_image(
                             # When backend is "sampling" but sampling failed, fall through to
                             # Google (if API key available) or Tesseract as per documented behavior
                             if backend in ("sampling", "google") or (
-                                backend == "auto" and os.environ.get("GOOGLE_VISION_API_KEY")
+                                backend == "auto" and os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
                             ):
                                 ocr_text = _ocr_png_google_vision(ocr_tmp_path)
                                 if ocr_text:
